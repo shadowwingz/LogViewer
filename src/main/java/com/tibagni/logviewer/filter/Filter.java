@@ -21,6 +21,8 @@ public class Filter {
   private int flags = Pattern.CASE_INSENSITIVE;
   private ContextInfo temporaryInfo;
   private boolean isSimpleFilter;
+  private boolean isMultiKeywordFilter;
+  private String[] keywords;
 
   public boolean wasLoadedFromLegacyFile = false;
 
@@ -35,6 +37,8 @@ public class Filter {
     pattern = getPattern(from.pattern.pattern());
     verbosity = from.verbosity;
     isSimpleFilter = from.isSimpleFilter;
+    isMultiKeywordFilter = from.isMultiKeywordFilter;
+    keywords = from.keywords != null ? from.keywords.clone() : null;
   }
 
   public Filter(String name, String pattern, Color color, LogLevel verbosity) throws FilterException {
@@ -44,6 +48,11 @@ public class Filter {
   public Filter(String name, String pattern, Color color, LogLevel verbosity, boolean caseSensitive)
       throws FilterException {
     updateFilter(name, pattern, color, verbosity, caseSensitive);
+  }
+
+  public Filter(String name, String[] keywords, Color color, LogLevel verbosity, boolean caseSensitive)
+      throws FilterException {
+    updateMultiKeywordFilter(name, keywords, color, verbosity, caseSensitive);
   }
 
   boolean nameIsPattern() {
@@ -68,6 +77,46 @@ public class Filter {
     this.pattern = getPattern(pattern);
     this.verbosity = verbosity;
     this.isSimpleFilter = !StringUtils.isPotentialRegex(pattern);
+    this.isMultiKeywordFilter = false;
+    this.keywords = null;
+  }
+
+  public void updateMultiKeywordFilter(String name, String[] keywords, Color color, LogLevel verbosity, boolean caseSensitive)
+      throws FilterException {
+
+    if (StringUtils.isEmpty(name) || keywords == null || keywords.length == 0 || color == null) {
+      throw new FilterException("You must provide a name, keywords and a color for the filter");
+    }
+
+    // Check all keywords are not empty
+    for (String keyword : keywords) {
+      if (StringUtils.isEmpty(keyword)) {
+        throw new FilterException("All keywords must be non-empty");
+      }
+    }
+
+    if (caseSensitive) {
+      flags &= ~Pattern.CASE_INSENSITIVE;
+    } else {
+      flags |= Pattern.CASE_INSENSITIVE;
+    }
+
+    this.name = name;
+    this.color = color;
+    this.verbosity = verbosity;
+    this.isMultiKeywordFilter = true;
+    this.isSimpleFilter = false;
+    this.keywords = keywords.clone();
+    
+    // Generate regex pattern for multi-keyword search
+    StringBuilder patternBuilder = new StringBuilder();
+    for (int i = 0; i < keywords.length; i++) {
+      if (i > 0) {
+        patternBuilder.append(".*");
+      }
+      patternBuilder.append(Pattern.quote(keywords[i]));
+    }
+    this.pattern = getPattern(patternBuilder.toString());
   }
 
   public static Filter createFromString(String filterString) throws FilterException {
@@ -84,15 +133,23 @@ public class Filter {
       }
 
       boolean isLegacy = params.length == 4;
+      boolean isMultiKeyword = params.length >= 7 && "MULTI".equals(params[6]);
 
       String name = params[0];
-      String pattern = StringUtils.decodeBase64(params[1]);
+      String patternData = StringUtils.decodeBase64(params[1]);
       Color color = new Color(Integer.parseInt(rgb[0]), Integer.parseInt(rgb[1]), Integer.parseInt(rgb[2]));
       LogLevel verbosity = isLegacy ? LogLevel.VERBOSE : LogLevel.valueOf(params[4]);
       int flags = Integer.parseInt(params[2]);
       boolean isCaseSensitive = (flags & Pattern.CASE_INSENSITIVE) == 0;
 
-      Filter filter = new Filter(name, pattern, color, verbosity, isCaseSensitive);
+      Filter filter;
+      if (isMultiKeyword) {
+        String[] keywords = patternData.split(";");
+        filter = new Filter(name, keywords, color, verbosity, isCaseSensitive);
+      } else {
+        filter = new Filter(name, patternData, color, verbosity, isCaseSensitive);
+      }
+      
       filter.wasLoadedFromLegacyFile = isLegacy;
       return filter;
     } catch (Exception e) {
@@ -141,6 +198,14 @@ public class Filter {
     return (flags & Pattern.CASE_INSENSITIVE) == 0;
   }
 
+  public boolean isMultiKeywordFilter() {
+    return isMultiKeywordFilter;
+  }
+
+  public String[] getKeywords() {
+    return keywords != null ? keywords.clone() : null;
+  }
+
   /**
    * Take a single String and return whether it appliesTo this filter or not
    *
@@ -149,7 +214,16 @@ public class Filter {
    */
   public boolean appliesTo(LogEntry entry) {
     String inputLine = entry.getLogText();
-    boolean foundPattern = isSimpleFilter ? simpleMatch(inputLine) : regexMatch(inputLine);
+    boolean foundPattern;
+    
+    if (isMultiKeywordFilter) {
+      foundPattern = multiKeywordMatch(inputLine);
+    } else if (isSimpleFilter) {
+      foundPattern = simpleMatch(inputLine);
+    } else {
+      foundPattern = regexMatch(inputLine);
+    }
+    
     boolean isVerbosityAllowed = verbosity.ordinal() <= entry.logLevel.ordinal();
 
     return foundPattern && isVerbosityAllowed;
@@ -164,6 +238,23 @@ public class Filter {
 
   private boolean regexMatch(String inputLine) {
     return pattern.matcher(inputLine).find();
+  }
+
+  private boolean multiKeywordMatch(String inputLine) {
+    if (keywords == null || keywords.length == 0) {
+      return false;
+    }
+    
+    String searchText = isCaseSensitive() ? inputLine : inputLine.toLowerCase();
+    
+    for (String keyword : keywords) {
+      String searchKeyword = isCaseSensitive() ? keyword : keyword.toLowerCase();
+      if (!searchText.contains(searchKeyword)) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   private Pattern getPattern(String pattern) throws FilterException {
@@ -181,14 +272,32 @@ public class Filter {
   }
 
   public String serializeFilter() {
-    return String.format("%s,%s,%d,%d:%d:%d,%s",
-        name.replaceAll(",", " "),
-        StringUtils.encodeBase64(getPatternString()),
-        flags,
-        color.getRed(),
-        color.getGreen(),
-        color.getBlue(),
-        verbosity);
+    String patternData;
+    if (isMultiKeywordFilter && keywords != null) {
+      // Serialize keywords array, separated by semicolons
+      patternData = StringUtils.encodeBase64(String.join(";", keywords));
+      // For multi-keyword filters, include the type identifier
+      return String.format("%s,%s,%d,%d:%d:%d,%s,%s",
+          name.replaceAll(",", " "),
+          patternData,
+          flags,
+          color.getRed(),
+          color.getGreen(),
+          color.getBlue(),
+          verbosity,
+          "MULTI");
+    } else {
+      // For regular regex filters, use the old format for backward compatibility
+      patternData = StringUtils.encodeBase64(getPatternString());
+      return String.format("%s,%s,%d,%d:%d:%d,%s",
+          name.replaceAll(",", " "),
+          patternData,
+          flags,
+          color.getRed(),
+          color.getGreen(),
+          color.getBlue(),
+          verbosity);
+    }
   }
 
   @Override

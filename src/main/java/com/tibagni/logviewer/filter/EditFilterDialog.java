@@ -61,6 +61,16 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
   private JComboBox<LogLevel> verbosityCombo;
   private JButton regexEditorBtn;
   private JColorChooser colorChooser;
+  
+  // Multi-keyword search related components
+  private JLabel filterTypeLbl;
+  private JComboBox<String> filterTypeCombo;
+  private JLabel keywordsLbl;
+  private JPanel keywordsPanel;
+  private JTextField keywordField1;
+  private JTextField keywordField2;
+  private JTextField keywordField3;
+  private JTextField keywordField4;
 
   private Filter filter;
   private String previewText;
@@ -98,6 +108,7 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
     buttonsPane.setDefaultButtonOk();
 
     regexEditorBtn.addActionListener(e -> onEditRegex());
+    filterTypeCombo.addActionListener(e -> onFilterTypeChanged());
 
     colorChooser.setColor(getInitialColor());
 
@@ -117,15 +128,25 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
     if (editingFilter != null) {
       filter = editingFilter;
       nameTxt.setText(filter.getName());
-      regexTxt.setText(filter.getPatternString());
-      regexTxt.selectAll();
       colorChooser.setColor(filter.getColor());
       caseSensitiveCbx.setSelected(filter.isCaseSensitive());
       verbosityCombo.setSelectedItem(filter.getVerbosity());
-      nameIsPattern = filter.nameIsPattern();
+      
+      if (filter.isMultiKeywordFilter()) {
+        filterTypeCombo.setSelectedItem("Multi-Keyword Search");
+        String[] keywords = filter.getKeywords();
+        loadKeywordsToFields(keywords);
+      } else {
+        filterTypeCombo.setSelectedItem("Regular Expression");
+        regexTxt.setText(filter.getPatternString());
+        regexTxt.selectAll();
+        nameIsPattern = filter.nameIsPattern();
+      }
     }
 
-    if (nameIsPattern) {
+    onFilterTypeChanged();
+
+    if (nameIsPattern && filter != null && !filter.isMultiKeywordFilter()) {
       regexTxt.getDocument().addDocumentListener(regexDocumentListener);
       nameTxt.setEnabled(false);
       nameTxt.addMouseListener(new MouseAdapter() {
@@ -145,7 +166,13 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
       contentPane.validate();
     }
 
-    SwingUtilities.invokeLater(() -> regexTxt.requestFocus());
+     SwingUtilities.invokeLater(() -> {
+       if (filterTypeCombo.getSelectedItem().equals("Multi-Keyword Search")) {
+         keywordField1.requestFocus();
+       } else {
+         regexTxt.requestFocus();
+       }
+     });
 
     if (!StringUtils.isEmpty(preDefinedText)) {
       regexTxt.setText(preDefinedText);
@@ -163,15 +190,26 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
     // add your code here
     Color selectedColor = colorChooser.getColor();
     String name = nameTxt.getText();
-    String pattern = regexTxt.getText();
     boolean caseSensitive = caseSensitiveCbx.isSelected();
     LogLevel verbosity = (LogLevel) verbosityCombo.getSelectedItem();
 
     try {
       if (filter == null) {
-        filter = new Filter(name, pattern, selectedColor, verbosity, caseSensitive);
+        if (filterTypeCombo.getSelectedItem().equals("Multi-Keyword Search")) {
+          String[] keywords = parseKeywords();
+          filter = new Filter(name, keywords, selectedColor, verbosity, caseSensitive);
+        } else {
+          String pattern = regexTxt.getText();
+          filter = new Filter(name, pattern, selectedColor, verbosity, caseSensitive);
+        }
       } else {
-        filter.updateFilter(name, pattern, selectedColor, verbosity, caseSensitive);
+        if (filterTypeCombo.getSelectedItem().equals("Multi-Keyword Search")) {
+          String[] keywords = parseKeywords();
+          filter.updateMultiKeywordFilter(name, keywords, selectedColor, verbosity, caseSensitive);
+        } else {
+          String pattern = regexTxt.getText();
+          filter.updateFilter(name, pattern, selectedColor, verbosity, caseSensitive);
+        }
       }
     } catch (FilterException e) {
       JOptionPane.showConfirmDialog(this, e.getMessage(), "Error...",
@@ -195,6 +233,54 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
     if (edited != null) {
       regexTxt.setText(edited.pattern);
       caseSensitiveCbx.setSelected(edited.caseSensitive);
+    }
+  }
+
+    private void onFilterTypeChanged() {
+        boolean isMultiKeyword = filterTypeCombo.getSelectedItem().equals("Multi-Keyword Search");
+    
+    regexLbl.setVisible(!isMultiKeyword);
+    regexTxt.setVisible(!isMultiKeyword);
+    // Keep Editor button visible to maintain layout space
+    // regexEditorBtn.setVisible(!isMultiKeyword);
+    
+    keywordsLbl.setVisible(isMultiKeyword);
+    keywordsPanel.setVisible(isMultiKeyword);
+    
+    // Adjust layout
+    contentPane.revalidate();
+    contentPane.repaint();
+  }
+
+  private String[] parseKeywords() {
+    java.util.List<String> keywords = new java.util.ArrayList<>();
+    JTextField[] fields = {keywordField1, keywordField2, keywordField3, keywordField4};
+    for (JTextField field : fields) {
+      String text = field.getText().trim();
+      if (!StringUtils.isEmpty(text)) {
+        keywords.add(text);
+      }
+    }
+    return keywords.toArray(new String[0]);
+  }
+  
+  private void loadKeywordsToFields(String[] keywords) {
+    // Clear all fields first
+    keywordField1.setText("");
+    keywordField2.setText("");
+    keywordField3.setText("");
+    keywordField4.setText("");
+    
+    // Load keywords into fields
+    if (keywords != null && keywords.length > 0) {
+      JTextField[] fields = {keywordField1, keywordField2, keywordField3, keywordField4};
+      int fieldIndex = 0;
+      for (String keyword : keywords) {
+        if (fieldIndex < fields.length) {
+          fields[fieldIndex].setText(keyword);
+          fieldIndex++;
+        }
+      }
     }
   }
 
@@ -269,8 +355,8 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
   private JPanel buildEditPane() {
     final JPanel editPane = new JPanel();
     editPane.setLayout(new FormLayout(
-        "fill:d:noGrow,left:4dlu:noGrow,fill:d:grow,left:4dlu:noGrow,fill:max(d;4px):noGrow",
-        "center:d:noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow"));
+        "fill:d:noGrow,left:4dlu:noGrow,fill:d:grow,left:4dlu:noGrow,fill:max(d;4px):noGrow,left:4dlu:noGrow,fill:max(d;4px):noGrow,left:4dlu:noGrow,fill:max(d;4px):noGrow",
+        "center:d:noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow,top:3dlu:noGrow,center:max(d;4px):noGrow"));
 
     nameLbl = new JLabel();
     nameLbl.setText("Filter name:");
@@ -281,37 +367,93 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
     nameTxt.setEnabled(true);
     editPane.add(nameTxt, cc.xy(3, 1, CellConstraints.FILL, CellConstraints.DEFAULT));
 
+    // Filter type selection
+    filterTypeLbl = new JLabel();
+    filterTypeLbl.setText("Filter type:");
+    filterTypeLbl.setToolTipText("Choose the type of filter");
+    editPane.add(filterTypeLbl, cc.xy(1, 3));
+    filterTypeCombo = new JComboBox<>();
+        filterTypeCombo.addItem("Regular Expression");
+        filterTypeCombo.addItem("Multi-Keyword Search");
+    editPane.add(filterTypeCombo, cc.xy(3, 3, CellConstraints.FILL, CellConstraints.DEFAULT));
+
+    // Regular expression related components
     regexLbl = new JLabel();
     regexLbl.setText("Regex:");
     regexLbl.setToolTipText("The regular expression of your filter");
-    editPane.add(regexLbl, cc.xy(1, 3));
+    editPane.add(regexLbl, cc.xy(1, 5));
     regexTxt = new JTextField();
-    editPane.add(regexTxt, cc.xy(3, 3, CellConstraints.FILL, CellConstraints.DEFAULT));
+    editPane.add(regexTxt, cc.xy(3, 5, CellConstraints.FILL, CellConstraints.DEFAULT));
     regexEditorBtn = new JButton();
     regexEditorBtn.setText("Editor");
     regexEditorBtn.setToolTipText("Open the regex editor window");
-    editPane.add(regexEditorBtn, cc.xy(5, 3));
+    editPane.add(regexEditorBtn, cc.xy(5, 5));
+
+    // Multi-keyword search related components
+    keywordsLbl = new JLabel();
+    keywordsLbl.setText("Keywords:");
+    keywordsLbl.setToolTipText("Enter keywords. All keywords must be present in the log line.");
+    editPane.add(keywordsLbl, cc.xy(1, 5));
+    
+    // Create 4 keyword input fields in a panel with custom layout
+    keywordsPanel = new JPanel();
+    keywordsPanel.setLayout(new java.awt.BorderLayout());
+    
+    // Create a sub-panel for the 4 input fields with horizontal layout
+    JPanel keywordsInputPanel = new JPanel();
+    keywordsInputPanel.setLayout(new java.awt.BorderLayout());
+    
+    // Create the 4 input fields
+    keywordField1 = new JTextField();
+    keywordField1.setPreferredSize(new java.awt.Dimension(150, 22));
+    keywordField1.setToolTipText("Enter keyword 1");
+    
+    keywordField2 = new JTextField();
+    keywordField2.setPreferredSize(new java.awt.Dimension(150, 22));
+    keywordField2.setToolTipText("Enter keyword 2");
+    
+    keywordField3 = new JTextField();
+    keywordField3.setPreferredSize(new java.awt.Dimension(150, 22));
+    keywordField3.setToolTipText("Enter keyword 3");
+    
+    keywordField4 = new JTextField();
+    keywordField4.setPreferredSize(new java.awt.Dimension(150, 22));
+    keywordField4.setToolTipText("Enter keyword 4");
+    
+    // Create a horizontal box to hold the 4 input fields with 20px spacing
+    Box horizontalBox = Box.createHorizontalBox();
+    horizontalBox.add(keywordField1);
+    horizontalBox.add(Box.createHorizontalStrut(20));
+    horizontalBox.add(keywordField2);
+    horizontalBox.add(Box.createHorizontalStrut(20));
+    horizontalBox.add(keywordField3);
+    horizontalBox.add(Box.createHorizontalStrut(20));
+    horizontalBox.add(keywordField4);
+    
+    keywordsInputPanel.add(horizontalBox, java.awt.BorderLayout.CENTER);
+    keywordsPanel.add(keywordsInputPanel, java.awt.BorderLayout.CENTER);
+    editPane.add(keywordsPanel, cc.xyw(3, 5, 1, CellConstraints.FILL, CellConstraints.DEFAULT));
 
     caseSensitiveLbl = new JLabel();
     caseSensitiveLbl.setText("Case sensitive:");
-    editPane.add(caseSensitiveLbl, cc.xy(1, 5));
+    editPane.add(caseSensitiveLbl, cc.xy(1, 7));
     caseSensitiveCbx = new JCheckBox();
     caseSensitiveCbx.setText("Enable case sensitive for this filter");
-    editPane.add(caseSensitiveCbx, cc.xy(3, 5));
+    editPane.add(caseSensitiveCbx, cc.xy(3, 7));
 
     verbosityLbl = new JLabel();
     verbosityLbl.setText("Verbosity");
-    editPane.add(verbosityLbl, cc.xy(1, 7));
+    editPane.add(verbosityLbl, cc.xy(1, 9));
     verbosityCombo = new JComboBox<>();
     for (LogLevel level : LogLevel.values()) {
       verbosityCombo.addItem(level);
     }
-    editPane.add(verbosityCombo, cc.xy(3, 7));
+    editPane.add(verbosityCombo, cc.xy(3, 9));
 
     colorLbl = new JLabel();
     colorLbl.setText("Color:");
     colorLbl.setToolTipText("Choose a color to differentiate your filter");
-    editPane.add(colorLbl, cc.xy(1, 9));
+    editPane.add(colorLbl, cc.xy(1, 11));
     colorChooser = new JColorChooser();
 
     // Show a simple text field for preview
@@ -321,7 +463,7 @@ public class EditFilterDialog extends JDialog implements ButtonsPane.Listener {
             UIScaleUtils.dip(5),
             UIScaleUtils.dip(15)));
     colorChooser.setPreviewPanel(preview);
-    editPane.add(colorChooser, cc.xy(3, 9));
+    editPane.add(colorChooser, cc.xy(3, 11));
 
     return editPane;
   }
