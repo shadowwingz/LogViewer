@@ -844,9 +844,9 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
       val filePaths = openedFiles.map { file ->
         "${file.parentFile?.absolutePath ?: ""}/${file.name}"
       }
-      val htmlText = "<html><body style='margin: 0; padding: 0;'>" +
-          "<div style='text-align: left;'>Logs Path:</div>" +
-          filePaths.joinToString("") { "<div style='text-align: left;'>$it</div>" } +
+      val htmlText = "<html><body style='margin: 0; padding: 0; white-space: nowrap;'>" +
+          "<div style='text-align: left; display: inline;'>Logs Path:</div>" +
+          filePaths.joinToString("") { "<div style='text-align: left; display: inline;'>$it</div>" } +
           "</body></html>"
       currentLogsLbl.text = htmlText
     } else {
@@ -866,10 +866,10 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
             filePath
           }
         }
-        val htmlText = "<html><body style='margin: 0; padding: 0;'>" +
-            "<div style='text-align: left;'>Logs Path:</div>" +
-            filePaths.joinToString("") { "<div style='text-align: left;'>$it</div>" } +
-            "</body></html>"
+      val htmlText = "<html><body style='margin: 0; padding: 0; white-space: nowrap;'>" +
+          "<div style='text-align: left; display: inline;'>Logs Path:</div>" +
+          filePaths.joinToString("") { "<div style='text-align: left; display: inline;'>$it</div>" } +
+          "</body></html>"
         currentLogsLbl.text = htmlText
       }
     }
