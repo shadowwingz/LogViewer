@@ -527,6 +527,21 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
       } catch (ex: IndexOutOfBoundsException) {
         Logger.debug("Error adding process/thread filter options: ${ex.message}")
       }
+
+      // Add "Open In Explorer" option
+      try {
+        val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
+        val fileName = entry.fileName
+        if (fileName.isNotEmpty()) {
+          popup.add(JSeparator())
+          popup.add("Open In Explorer")
+            .addActionListener {
+              openFileInExplorer(fileName)
+            }
+        }
+      } catch (ex: IndexOutOfBoundsException) {
+        Logger.debug("Error adding Open In Explorer option: ${ex.message}")
+      }
     }
   }
 
@@ -1126,5 +1141,52 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
     )
 
     mainSplitPane.leftComponent = filtersMainPane
+  }
+
+  private fun openFileInExplorer(fileName: String) {
+    try {
+      // Find the file from currently opened files
+      val openedFiles = presenter.getCurrentlyOpenedLogFiles()
+      val targetFile = openedFiles.find { it.name == fileName }
+      
+      if (targetFile != null && targetFile.exists()) {
+        // Use Desktop API to open the file's parent directory in explorer
+        val desktop = java.awt.Desktop.getDesktop()
+        if (desktop.isSupported(java.awt.Desktop.Action.BROWSE_FILE_DIR)) {
+          desktop.browseFileDirectory(targetFile)
+        } else {
+          // Fallback for older Java versions
+          val parentDir = targetFile.parentFile
+          if (parentDir != null && parentDir.exists()) {
+            val os = System.getProperty("os.name").lowercase()
+            val processBuilder = when {
+              os.contains("win") -> ProcessBuilder("explorer.exe", "/select,", targetFile.absolutePath)
+              os.contains("mac") -> ProcessBuilder("open", "-R", targetFile.absolutePath)
+              os.contains("nix") || os.contains("nux") -> ProcessBuilder("xdg-open", parentDir.absolutePath)
+              else -> ProcessBuilder("explorer", parentDir.absolutePath)
+            }
+            processBuilder.start()
+          }
+        }
+      } else {
+        Logger.debug("File not found: $fileName")
+        // Show error message to user
+        javax.swing.JOptionPane.showMessageDialog(
+          mainView.parent,
+          "File not found: $fileName",
+          "Error",
+          javax.swing.JOptionPane.ERROR_MESSAGE
+        )
+      }
+    } catch (ex: Exception) {
+      Logger.debug("Error opening file in explorer: ${ex.message}")
+      // Show error message to user
+      javax.swing.JOptionPane.showMessageDialog(
+        mainView.parent,
+        "Error opening file in explorer: ${ex.message}",
+        "Error",
+        javax.swing.JOptionPane.ERROR_MESSAGE
+      )
+    }
   }
 }
