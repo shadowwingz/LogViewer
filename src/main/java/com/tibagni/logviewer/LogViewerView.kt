@@ -482,6 +482,26 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
           val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
           addFilterFromLogLine(entry.logText)
         }
+      
+      // Add process and thread filtering options
+      val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
+      val processId = com.tibagni.logviewer.util.LogLineParser.extractProcessId(entry.logText)
+      val threadId = com.tibagni.logviewer.util.LogLineParser.extractThreadId(entry.logText)
+      
+      if (processId != null) {
+        popup.add(JSeparator())
+        popup.add("Filter by Process ID ($processId)")
+          .addActionListener {
+            createTemporaryFilterByProcessId(processId)
+          }
+        
+        if (threadId != null) {
+          popup.add("Filter by Process ID ($processId) and Thread ID ($threadId)")
+            .addActionListener {
+              createTemporaryFilterByProcessAndThreadId(processId, threadId)
+            }
+        }
+      }
     }
   }
 
@@ -518,6 +538,30 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
         presenter.addFilter(group, filter)
       }
     }
+  }
+
+  private fun createTemporaryFilterByProcessId(processId: String) {
+    // Create a temporary filter group for process-based filtering
+    val tempGroupName = "Temporary Filters"
+    
+    // Create a regex filter that matches the process ID
+    val regexPattern = "\\s+$processId\\s+\\d+\\s+[VDIWE]\\s+.*"
+    val filter = Filter("Process $processId", regexPattern, java.awt.Color(70, 100, 150), LogLevel.VERBOSE, true) // Muted Blue
+    
+    // Add to temporary group and apply immediately
+    presenter.addFilter(tempGroupName, filter, false)
+  }
+
+  private fun createTemporaryFilterByProcessAndThreadId(processId: String, threadId: String) {
+    // Create a temporary filter group for process and thread-based filtering
+    val tempGroupName = "Temporary Filters"
+    
+    // Create a regex filter that matches both process ID and thread ID
+    val regexPattern = "\\s+$processId\\s+$threadId\\s+[VDIWE]\\s+.*"
+    val filter = Filter("Process $processId Thread $threadId", regexPattern, java.awt.Color(100, 140, 100), LogLevel.VERBOSE, true) // Muted Green
+    
+    // Add to temporary group and apply immediately
+    presenter.addFilter(tempGroupName, filter, false)
   }
 
   private fun setupFilteredLogsContextActions() {
