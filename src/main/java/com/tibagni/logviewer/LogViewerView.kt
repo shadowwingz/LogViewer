@@ -466,41 +466,66 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
         }
       }
     })
+
+    // Add selection listener to update Logs Path when selection changes
+    logList.table.selectionModel.addListSelectionListener { e ->
+      if (!e.valueIsAdjusting && logList.table.selectedRow != -1) {
+        try {
+          val selectedEntry = logListTableModel.getValueAt(logList.table.selectedRow, 0) as LogEntry
+          updateCurrentLogsLocation(selectedEntry.fileName)
+        } catch (ex: Exception) {
+          // Handle IndexOutOfBoundsException gracefully
+          Logger.debug("Error updating logs location: ${ex.message}")
+        }
+      }
+    }
   }
 
   private fun addCommonLogsContextActions(popup: JPopupMenu, selectedRows: IntArray, model: LogListTableModel) {
     popup
       .add("Add to 'My Logs'")
       .addActionListener {
-        presenter.addLogEntriesToMyLogs(selectedRows.map { model.getValueAt(it, 0) as LogEntry })
+        try {
+          presenter.addLogEntriesToMyLogs(selectedRows.map { model.getValueAt(it, 0) as LogEntry })
+        } catch (ex: IndexOutOfBoundsException) {
+          Logger.debug("Error adding logs to My Logs: ${ex.message}")
+        }
       }
 
     if (selectedRows.size == 1) {
       popup.add(JSeparator())
       popup.add("Create Filter from this line...")
         .addActionListener {
-          val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
-          addFilterFromLogLine(entry.logText)
-        }
-      
-      // Add process and thread filtering options
-      val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
-      val processId = com.tibagni.logviewer.util.LogLineParser.extractProcessId(entry.logText)
-      val threadId = com.tibagni.logviewer.util.LogLineParser.extractThreadId(entry.logText)
-      
-      if (processId != null) {
-        popup.add(JSeparator())
-        popup.add("Filter by Process ID ($processId)")
-          .addActionListener {
-            createTemporaryFilterByProcessId(processId)
+          try {
+            val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
+            addFilterFromLogLine(entry.logText)
+          } catch (ex: IndexOutOfBoundsException) {
+            Logger.debug("Error creating filter from log line: ${ex.message}")
           }
-        
-        if (threadId != null) {
-          popup.add("Filter by Process ID ($processId) and Thread ID ($threadId)")
-            .addActionListener {
-              createTemporaryFilterByProcessAndThreadId(processId, threadId)
-            }
         }
+
+      // Add process and thread filtering options
+      try {
+        val entry = model.getValueAt(selectedRows[0], 0) as LogEntry
+        val processId = com.tibagni.logviewer.util.LogLineParser.extractProcessId(entry.logText)
+        val threadId = com.tibagni.logviewer.util.LogLineParser.extractThreadId(entry.logText)
+
+        if (processId != null) {
+          popup.add(JSeparator())
+          popup.add("Filter by Process ID ($processId)")
+            .addActionListener {
+              createTemporaryFilterByProcessId(processId)
+            }
+
+          if (threadId != null) {
+            popup.add("Filter by Process ID ($processId) and Thread ID ($threadId)")
+              .addActionListener {
+                createTemporaryFilterByProcessAndThreadId(processId, threadId)
+              }
+          }
+        }
+      } catch (ex: IndexOutOfBoundsException) {
+        Logger.debug("Error adding process/thread filter options: ${ex.message}")
       }
     }
   }
@@ -580,6 +605,19 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
         }
       }
     })
+
+    // Add selection listener to update Logs Path when selection changes in filtered logs
+    filteredLogList.table.selectionModel.addListSelectionListener { e ->
+      if (!e.valueIsAdjusting && filteredLogList.table.selectedRow != -1) {
+        try {
+          val selectedEntry = filteredLogListTableModel.getValueAt(filteredLogList.table.selectedRow, 0) as LogEntry
+          updateCurrentLogsLocation(selectedEntry.fileName)
+        } catch (ex: Exception) {
+          // Handle IndexOutOfBoundsException gracefully
+          Logger.debug("Error updating logs location from filtered logs: ${ex.message}")
+        }
+      }
+    }
   }
 
   private fun setupMyLogsContextActions() {
@@ -785,14 +823,41 @@ class LogViewerViewImpl(private val mainView: MainView, initialLogFiles: Set<Fil
 
   override fun showCurrentLogsLocation(logsPath: String?) {
     Logger.debug("showCurrentLogsLocation: $logsPath")
-    val text = if (logsPath == null) null else SwingUtils.truncateTextFor(
-      currentLogsLbl,
-      "Logs path:",
-      logsPath,
-      contentPane.width
-    )
+    // Display all opened files instead of just the path
+    val openedFiles = presenter.getCurrentlyOpenedLogFiles()
+    if (openedFiles.isNotEmpty()) {
+      val filePaths = openedFiles.map { file ->
+        "${file.parentFile?.absolutePath ?: ""}/${file.name}"
+      }
+      val htmlText = "<html><body style='margin: 0; padding: 0;'>" +
+          "<div style='text-align: left;'>Logs Path:</div>" +
+          filePaths.joinToString("") { "<div style='text-align: left;'>$it</div>" } +
+          "</body></html>"
+      currentLogsLbl.text = htmlText
+    } else {
+      currentLogsLbl.text = null
+    }
+  }
 
-    currentLogsLbl.text = text
+  private fun updateCurrentLogsLocation(fileName: String?) {
+    if (fileName != null && fileName.isNotEmpty()) {
+      val openedFiles = presenter.getCurrentlyOpenedLogFiles()
+      if (openedFiles.isNotEmpty()) {
+        val filePaths = openedFiles.map { file ->
+          val filePath = "${file.parentFile?.absolutePath ?: ""}/${file.name}"
+          if (file.name == fileName) {
+            "$filePath &larr;"
+          } else {
+            filePath
+          }
+        }
+        val htmlText = "<html><body style='margin: 0; padding: 0;'>" +
+            "<div style='text-align: left;'>Logs Path:</div>" +
+            filePaths.joinToString("") { "<div style='text-align: left;'>$it</div>" } +
+            "</body></html>"
+        currentLogsLbl.text = htmlText
+      }
+    }
   }
 
   override fun showFilteredLogs(logEntries: List<LogEntry>?) {

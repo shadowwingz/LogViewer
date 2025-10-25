@@ -185,7 +185,12 @@ public class LogParser {
   }
 
   private LogEntry createLogEntry(String logLine, String logName) {
-    return new LogEntry(logLine, findLogLevel(logLine), findTimestamp(logLine), logName);
+    // Extract filename from the full path
+    String fileName = logName;
+    if (logName != null && logName.contains(java.io.File.separator)) {
+      fileName = logName.substring(logName.lastIndexOf(java.io.File.separator) + 1);
+    }
+    return new LogEntry(logLine, findLogLevel(logLine), findTimestamp(logLine), logName, fileName);
   }
 
   LogLevel findLogLevel(String logLine) {

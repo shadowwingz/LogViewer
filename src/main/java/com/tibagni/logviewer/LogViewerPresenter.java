@@ -55,5 +55,7 @@ public interface LogViewerPresenter {
   void addLogEntriesToMyLogs(List<LogEntry> entries);
   void removeFromMyLog(int[] indices);
 
+  List<File> getCurrentlyOpenedLogFiles();
+
   void finishing();
 }

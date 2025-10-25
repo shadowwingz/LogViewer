@@ -13,20 +13,26 @@ public class LogEntry implements Comparable<LogEntry> {
   public final String logText;
   public final LogLevel logLevel;
   public final LogStream logStream;
+  public final String fileName;
 
   private Filter appliedFilter;
   @Nullable
   private Filter searchFilter;
 
   public LogEntry(String logText, LogLevel logLevel, LogTimestamp timestamp) {
-    this(logText, logLevel, timestamp, "");
+    this(logText, logLevel, timestamp, "", "");
   }
 
   public LogEntry(String logText, LogLevel logLevel, LogTimestamp timestamp, String logName) {
+    this(logText, logLevel, timestamp, logName, logName);
+  }
+
+  public LogEntry(String logText, LogLevel logLevel, LogTimestamp timestamp, String logName, String fileName) {
     this.logText = logText;
     this.logLevel = logLevel;
     this.timestamp = timestamp;
     this.logStream = LogStream.inferLogStreamFromName(logName);
+    this.fileName = fileName;
   }
 
   public String getLogText() {
@@ -55,6 +61,10 @@ public class LogEntry implements Comparable<LogEntry> {
 
   public LogStream getStream() {
     return logStream;
+  }
+
+  public String getFileName() {
+    return fileName;
   }
 
   public int getLength() {
@@ -96,11 +106,12 @@ public class LogEntry implements Comparable<LogEntry> {
         Objects.equals(timestamp, logEntry.timestamp) &&
         Objects.equals(logText, logEntry.logText) &&
         logLevel == logEntry.logLevel &&
-        logStream == logEntry.logStream;
+        logStream == logEntry.logStream &&
+        Objects.equals(fileName, logEntry.fileName);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(index, timestamp, logText, logLevel, logStream);
+    return Objects.hash(index, timestamp, logText, logLevel, logStream, fileName);
   }
 }

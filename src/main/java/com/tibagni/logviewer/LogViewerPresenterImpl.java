@@ -693,6 +693,11 @@ public class LogViewerPresenterImpl extends AsyncPresenter implements LogViewerP
     view.showMyLogs(myLogsRepository.getLogs());
   }
 
+  @Override
+  public List<File> getCurrentlyOpenedLogFiles() {
+    return logsRepository.getCurrentlyOpenedLogFiles();
+  }
+
   boolean updateMyLogs() {
     // We only want to update logs in 'My Logs' if the new logs that are being loaded are different
     // So we check if the logs under 'My Logs' are still matching the logs that are open. If not, clear
