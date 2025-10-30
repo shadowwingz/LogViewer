@@ -133,7 +133,10 @@ public class Filter {
       }
 
       boolean isLegacy = params.length == 4;
-      boolean isMultiKeyword = params.length >= 7 && "MULTI".equals(params[6]);
+      // For multi-keyword format we serialize as:
+      // name,base64(keywords joined by ';'),flags,R:G:B,verbosity,MULTI
+      // Which results in params length == 6 and the type marker at index 5
+      boolean isMultiKeyword = params.length >= 6 && "MULTI".equals(params[5]);
 
       String name = params[0];
       String patternData = StringUtils.decodeBase64(params[1]);
